@@ -6,11 +6,13 @@ Projet porté par **CAMTECH SOLUTIONS S.A.** (Douala, Cameroun) dans le cadre de
 
 ---
 
-## 1. Schéma d'architecture
+## 1. Architecture
+
+L'application DIGITRANS-CM est déployée sur une infrastructure cloud hybride combinant AWS et Microsoft Azure, avec une partie des données sensibles conservée sur site au Cameroun pour des raisons de conformité légale (loi camerounaise n°2010/012).
 
 ```
-                        DIGITRANS-CM Architecture
-                          Cloud hybride AWS + Azure
+                        DIGITRANS-CM
+                          Cloud hybride
 
   ┌──────────┐  ┌──────────┐  ┌────────────┐  ┌──────────┐
   │   ERP    │  │   CRM    │  │ Supply     │  │   BI     │
@@ -20,136 +22,148 @@ Projet porté par **CAMTECH SOLUTIONS S.A.** (Douala, Cameroun) dans le cadre de
        └─────────────┴─────────────┴───────────────┘
                          │
                   ┌──────┴──────┐
-                  │  Azure AD   │── Authentification OAuth2
-                  │  + JWT      │
+                  │  Azure AD   │── Authentification OAuth2/JWT
                   └──────┬──────┘
                          │
                   ┌──────┴──────┐   ┌──────────────┐
                   │   MySQL     │   │   Redis      │
                   │  (RDS)      │   │ (Cache +     │
-                  │             │   │  Offline sync)│
+                  │             │   │  Sync offline)│
                   └──────┬──────┘   └──────────────┘
                          │
-  ┌──────────────Azure──────────────────────────────┐
-  │  Azure AD (Identités) + Azure Monitor (Logs)    │
-  └─────────────────────────────────────────────────┘
+  ┌─── Azure ───────────────────────────────┐
+  │  Azure AD (Identités)                   │
+  │  Azure Monitor (Supervision centralisée)│
+  └─────────────────────────────────────────┘
 
-  ┌──────────────AWS (af-south-1)───────────────────┐
-  │  VPC → Subnets → ALB → Auto Scaling → RDS      │
-  │  CloudWatch (Métriques) + EKS (Kubernetes)      │
-  └─────────────────────────────────────────────────┘
+  ┌─── AWS (af-south-1, Cape Town) ────────┐
+  │  VPC → ALB → Auto Scaling → RDS MySQL  │
+  │  CloudWatch (Métriques applicatives)    │
+  │  Kubernetes (EKS)                       │
+  └─────────────────────────────────────────┘
 
-  On-premise (Cameroun) : Données RH + Financières (loi 2010/012)
-  Cloud (af-south-1)    : APIs applicatives, BI, CRM, Cache
-  Azure                 : Azure AD, Azure Monitor
+  On-premise (Cameroun) : Données RH, financières, clients
+  Cloud AWS (af-south-1) : APIs, BI, CRM, Cache
+  Azure                : Azure AD, Azure Monitor
 ```
+
+### Choix des régions cloud
+
+Deux régions africaines sont utilisées pour garantir une latence minimale depuis Douala (~150-200 ms) et respecter les contraintes de souveraineté des données :
+
+| Fournisseur | Région | Services |
+|-------------|--------|----------|
+| AWS | af-south-1 (Cape Town) | Compute, base de données, cache, monitoring |
+| Azure | South Africa North | Identités, supervision centralisée |
+
+### Répartition des données
+
+| Type de données | Localisation | Raison |
+|----------------|-------------|--------|
+| RH, financières, clients | On-premise (Cameroun) | Loi 2010/012 — souveraineté |
+| APIs, BI, CRM, Cache | Cloud AWS | Haute disponibilité, scalabilité |
+| Identités, Logs | Azure | Azure AD + Azure Monitor |
 
 ---
 
-## 2. Choix technologiques
+## 2. Stack technique
 
-### 2.1. Régions cloud africaines
-
-Conformément à la section 1.2.1 du sujet :
-- **AWS af-south-1 (Cape Town)** : latence ~150-200ms depuis Douala
-- **Azure South Africa North** : authentification centralisée (Azure AD) + supervision (Azure Monitor)
-
-### 2.2. Répartition on-premise vs cloud
-
-| Données | Localisation | Justification |
-|---------|-------------|---------------|
-| RH, financières, clients | On-premise (Cameroun) | Loi 2010/012, souveraineté |
-| APIs, BI, CRM, Cache | Cloud af-south-1 | Haute disponibilité, scalabilité |
-| Identités, Supervision | Azure (Global) | Azure AD + Azure Monitor |
-
-### 2.3. Architecture résiliente
-
-- Multi-AZ RDS MySQL en production (basculement automatique)
-- Auto Scaling group (min 2, max 6 instances EC2)
-- ALB (Application Load Balancer) pour répartition de charge
-- **Kubernetes (EKS)** pour l'orchestration des conteneurs
-- Cache Redis + file d'attente locale pour mode offline-first
-- Snapshots quotidiens RDS + rétention 30 jours en prod
-
-### 2.4. Stack technique
-
-| Composant | Technologie | Justification |
-|-----------|-------------|---------------|
-| Backend | Java 17, Spring Boot 3.2.5 | Maturité, écosystème cloud |
-| Base de données | **MySQL 8.0** (AWS RDS) | Conforme au sujet (RDS), fiable |
-| Authentification | **Azure AD** (OAuth2 / JWT) | Exigé section 1.2.3 |
-| API Documentation | Springdoc OpenAPI (Swagger) | Exigé section 1.2.3 |
-| Cache offline-first | Redis 7 + sync queue locale | Exigé section 1.2.4 |
-| Supervision | **AWS CloudWatch** + **Azure Monitor** | Exigés section 1.4.3 |
-| Conteneurisation | Docker | Exigé section 1.3.4 |
-| Orchestration | **Kubernetes (EKS)** | Exigé section 1.3.4 |
-| CI/CD | GitHub Actions | Exigé section 1.3.3 |
-| IaC | AWS CloudFormation | Exigé section 1.3.1 |
+| Composant | Technologie | Rôle |
+|-----------|------------|------|
+| Backend | Java 17, Spring Boot 3.2.5 | API REST |
+| Base de données | MySQL 8.0 (AWS RDS) | Stockage persistant |
+| Authentification | Azure AD (OAuth2 / JWT) | Contrôle d'accès centralisé |
+| Documentation API | Swagger / OpenAPI (springdoc) | Interface de test interactive |
+| Cache | Redis 7 | Cache offline-first + file de synchronisation |
+| Monitoring | AWS CloudWatch + Azure Monitor | Métriques et logs |
+| Conteneurisation | Docker | Empaquetage standardisé |
+| Orchestration | Kubernetes (EKS) | Scalabilité et résilience |
+| CI/CD | GitHub Actions | Intégration et déploiement continus |
+| Infrastructure as Code | AWS CloudFormation | Provisionnement automatisé |
 
 ---
 
 ## 3. Modules fonctionnels
 
-| Module | Entités | Description |
-|--------|---------|-------------|
-| **ERP** | Employee, Supplier, Invoice | RH, fournisseurs, comptabilité |
-| **CRM** | Client, Restaurant | Relation client, restaurants SavoirManger |
-| **Supply Chain** | Product, Shipment | Traçabilité plantations → transformation → vente |
-| **BI** | Dashboard (stats) | Indicateurs clés (employés, clients, expéditions) |
+L'application est structurée en quatre modules interconnectés, chacun responsable d'un domaine métier :
+
+| Module | Entités gérées | Fonctionnalités |
+|--------|---------------|-----------------|
+| **ERP** | Employee, Supplier, Invoice | Gestion RH, fournisseurs et comptabilité |
+| **CRM** | Client, Restaurant | Relation client et gestion des restaurants SavoirManger |
+| **Supply Chain** | Product, Shipment | Traçabilité des flux (plantation → transformation → vente) |
+| **BI** | Dashboard (statistiques agrégées) | Indicateurs clés de performance (KPI) |
 
 ---
 
 ## 4. API REST
 
-Documentation Swagger : [http://localhost:8081/api/v1/swagger-ui.html](http://localhost:8081/api/v1/swagger-ui.html)
+L'ensemble des endpoints est documenté via Swagger UI, accessible en local à l'adresse :
 
-### Endpoints
+[http://localhost:8081/api/v1/swagger-ui.html](http://localhost:8081/api/v1/swagger-ui.html)
 
-| Méthode | Path | Module | Rôle requis |
-|---------|------|--------|-------------|
+### Points d'entrée
+
+| Méthode | Chemin | Module | Rôle requis |
+|---------|--------|--------|-------------|
 | GET | `/api/v1/erp/employees` | ERP | ADMIN |
 | POST | `/api/v1/erp/employees` | ERP | ADMIN |
 | GET | `/api/v1/erp/suppliers` | ERP | ADMIN |
+| POST | `/api/v1/erp/suppliers` | ERP | ADMIN |
 | GET | `/api/v1/erp/invoices` | ERP | ADMIN |
+| POST | `/api/v1/erp/invoices` | ERP | ADMIN |
 | GET | `/api/v1/crm/clients` | CRM | ADMIN, SALES |
 | GET | `/api/v1/crm/restaurants` | CRM | ADMIN, SALES |
 | GET | `/api/v1/supply/products` | Supply Chain | ADMIN, LOGISTICS |
 | GET | `/api/v1/supply/shipments` | Supply Chain | ADMIN, LOGISTICS |
 | GET | `/api/v1/bi/dashboard` | BI | ADMIN, MANAGER |
 
+### Sécurité
+
+Tous les endpoints (sauf Swagger et health check) sont protégés par OAuth2 avec Azure AD. Les tokens JWT sont validés par le resource server Spring Security. L'accès est restreint par rôle (ADMIN, SALES, LOGISTICS, MANAGER).
+
 ---
 
 ## 5. Déploiement
 
-### 5.1. Local (dev)
+### 5.1. Environnement de développement local
 
 ```bash
-docker-compose up -d          # MySQL + Redis
-mvn spring-boot:run            # Port 8081
+# Démarrer MySQL et Redis
+docker-compose up -d
+
+# Lancer l'application (port 8081)
+mvn spring-boot:run
 ```
 
-### 5.2. Kubernetes
+### 5.2. Profils disponibles
+
+| Profil | Usage | Base de données | CloudWatch | Azure Monitor |
+|--------|-------|----------------|------------|---------------|
+| `dev` | Développement local | MySQL local (3306) | Désactivé | Désactivé |
+| `h2` | Tests unitaires | H2 mémoire | Désactivé | Désactivé |
+| `test` | Tests CI | MySQL (CI) | Désactivé | Désactivé |
+| `prod` | Production | AWS RDS | Activé | Activé |
+
+### 5.3. Kubernetes
 
 ```bash
+# Déployer l'application sur un cluster Kubernetes
 kubectl apply -f k8s/
 ```
 
-Déploie : Deployment (2 replicas), Service (ClusterIP), Ingress, HPA (auto-scaling CPU 70%).
-
-### 5.3. Profils disponibles
-
-| Profil | Usage | DB | CloudWatch | Azure Monitor |
-|--------|-------|----|------------|---------------|
-| dev | Développement local | localhost:3306 | désactivé | désactivé |
-| test | Tests automatisés | digitrans_test | désactivé | désactivé |
-| prod | Production | AWS RDS | activé | activé |
+Le déploiement comprend :
+- 2 réplicas minimum, auto-scaling jusqu'à 6 (CPU > 70%)
+- Health checks (liveness + readiness)
+- Ingress avec termination SSL
+- ConfigMap et Secrets pour la configuration
 
 ### 5.4. Pipeline CI/CD (GitHub Actions)
 
-```yaml
-# .github/workflows/ci.yml
-# Jobs : build-and-test (MySQL) + docker push sur main
-```
+Le pipeline automatisé s'exécute sur chaque push :
+
+1. **Build & Test** — Compilation Maven + exécution des 46 tests unitaires (MySQL service)
+2. **Docker** (branch main uniquement) — Construction et publication de l'image sur Docker Hub
 
 ---
 
@@ -157,55 +171,75 @@ Déploie : Deployment (2 replicas), Service (ClusterIP), Ingress, HPA (auto-scal
 
 | Variable | Défaut | Description |
 |----------|--------|-------------|
-| `DB_HOST` | localhost | Hôte MySQL |
+| `DB_HOST` | localhost | Adresse du serveur MySQL |
 | `DB_PORT` | 3306 | Port MySQL |
-| `DB_NAME` | digitrans_db | Nom de la base |
-| `DB_USERNAME` | root | Utilisateur DB |
-| `DB_PASSWORD` | root | Mot de passe DB |
-| `REDIS_HOST` | localhost | Hôte Redis |
+| `DB_NAME` | digitrans_db | Nom de la base de données |
+| `DB_USERNAME` | root | Utilisateur MySQL |
+| `DB_PASSWORD` | root | Mot de passe MySQL |
+| `REDIS_HOST` | localhost | Adresse du serveur Redis |
 | `REDIS_PORT` | 6379 | Port Redis |
-| `SPRING_PROFILES_ACTIVE` | dev | Profil actif |
-| `AZURE_AD_ISSUER_URI` | — | Issuer URI Azure AD |
-| `AZURE_AD_CLIENT_ID` | — | Client ID Azure AD |
-| `AZURE_AD_CLIENT_SECRET` | — | Client Secret Azure AD |
+| `SPRING_PROFILES_ACTIVE` | dev | Profil Spring actif |
+| `AZURE_AD_ISSUER_URI` | — | URL du tenant Azure AD |
+| `AZURE_AD_CLIENT_ID` | — | Identifiant client Azure AD |
+| `AZURE_AD_CLIENT_SECRET` | — | Secret client Azure AD |
 
 ---
 
-## 7. Reprise après sinistre (RTO / RPO)
+## 7. Résilience et reprise après sinistre
 
 | Environnement | RPO | RTO | Stratégie |
 |--------------|-----|-----|-----------|
-| Dev / Test | 24h | 4h | Sauvegarde quotidienne + restauration manuelle |
-| Production | 1h | 30min | Multi-AZ RDS + Auto Scaling + snapshots automatiques |
+| Développement / Test | 24 h | 4 h | Sauvegarde quotidienne, restauration manuelle |
+| Production | 1 h | 30 min | Multi-AZ RDS, Auto Scaling, snapshots automatiques |
+
+Mécanismes de résilience en place :
+- **Base de données** : RDS Multi-AZ avec basculement automatique en production
+- **Application** : Auto Scaling Group (2 à 6 instances) derrière un ALB
+- **Cache** : Redis avec file d'attente locale pour fonctionnement hors-ligne
+- **Sauvegardes** : Snapshots RDS quotidiens, rétention 30 jours en production
 
 ---
 
 ## 8. Tests
 
-### 8.1. Tests unitaires
-- JUnit 5 + Spring Boot Test
-- Contexte Spring chargé via `@SpringBootTest`
+### 8.1. Tests unitaires (46 tests)
+
+| Classe de test | Nombre |
+|----------------|--------|
+| ErpServiceTest | 10 |
+| CrmServiceTest | 8 |
+| SupplyChainServiceTest | 6 |
+| BiServiceTest | 1 |
+| CacheServiceTest | 6 |
+| ErpControllerTest | 7 |
+| CrmControllerTest | 3 |
+| SupplyChainControllerTest | 3 |
+| BiControllerTest | 1 |
+| ContextLoadTest | 1 |
 
 ### 8.2. Tests de charge (K6)
+
 ```bash
 k6 run loadtests/k6-load-test.js
 ```
-Scénarios : montée progressive 20 → 100 utilisateurs simultanés.
-KPIs : P95 < 2000ms, taux d'erreur < 10%.
+
+Scénario : montée progressive de 20 à 100 utilisateurs simultanés sur 10 minutes.
+Objectifs : temps de réponse P95 < 2000 ms, taux d'erreur < 10 %.
 
 ---
 
 ## 9. Infrastructure as Code
 
 ### AWS CloudFormation
-Fichier : `infra/cloudformation-template.yaml`
 
-Ressources créées :
-- VPC (CIDR 10.0.0.0/16) avec 2 sous-réseaux publics + 1 privé
-- ALB + Target Group + Listener
-- Auto Scaling Group (min 1, max 6)
-- RDS MySQL 8.0 (Multi-AZ en prod)
-- Groupes de sécurité (moindre privilège)
+Le fichier `infra/cloudformation-template.yaml` provisionne automatiquement l'infrastructure AWS :
+
+- VPC (CIDR 10.0.0.0/16) avec 2 sous-réseaux publics et 2 privés
+- ALB (Application Load Balancer) avec target group et listener HTTP
+- Auto Scaling Group (1 à 6 instances EC2)
+- RDS MySQL 8.0 (Multi-AZ en production)
+- ElastiCache Redis 7.1
+- Groupes de sécurité appliquant le principe du moindre privilège
 
 ```bash
 aws cloudformation deploy \
@@ -214,30 +248,60 @@ aws cloudformation deploy \
   --region af-south-1
 ```
 
-### Kubernetes Manifests
-Dossier : `k8s/`
-- `configmap.yaml` : configuration applicative
-- `secrets.yaml` : credentials (DB, Azure AD)
-- `deployment.yaml` : 2 réplicas, probes, ressources
-- `service.yaml` : ClusterIP
-- `ingress.yaml` : exposition externe
-- `hpa.yaml` : auto-scaling (CPU 70%, mémoire 80%)
+### Manifests Kubernetes
+
+Le dossier `k8s/` contient les fichiers de déploiement pour Kubernetes :
+
+| Fichier | Description |
+|---------|-------------|
+| `namespace.yaml` | Espace de noms dédié |
+| `configmap.yaml` | Configuration applicative |
+| `secrets.yaml` | Credentials (DB, Azure AD) |
+| `deployment.yaml` | 2 réplicas, probes, ressources CPU/RAM |
+| `service.yaml` | Service interne ClusterIP |
+| `ingress.yaml` | Exposition externe avec SSL |
+| `hpa.yaml` | Auto-scaling horizontal (CPU 70 %, mémoire 80 %) |
 
 ---
 
-## 10. Rapport d'activité (collectif)
+## 10. Fonctionnement hors-ligne (offline-first)
+
+Le système intègre un mécanisme de résilience aux coupures réseau :
+
+1. **Cache Redis** : les données fréquemment consultées sont mises en cache avec un TTL de 30 minutes
+2. **File locale** : en cas d'indisponibilité de Redis, les opérations d'écriture sont stockées dans une file d'attente en mémoire
+3. **Synchronisation automatique** : toutes les 5 secondes, le service tente de rejouer les opérations en attente dès que Redis est de nouveau accessible
+
+---
+
+## 11. Supervision
+
+Deux solutions de monitoring sont utilisées en parallèle :
+
+| Outil | Usage | Fournisseur |
+|-------|-------|-------------|
+| **CloudWatch** | Métriques applicatives (CPU, mémoire, requêtes) | AWS |
+| **Azure Monitor** | Logs centralisés, alertes, tableaux de bord | Azure |
+
+En environnement de développement, les deux sont désactivés. En production, les métriques sont exportées vers les deux services simultanément.
+
+---
+
+## 12. Rapport d'activité (collectif)
 
 ### Répartition des tâches
-- Backend (API, entités, services) : équipe 1
-- Sécurité (Azure AD, RBAC) : équipe 2
-- DevOps (Docker, K8s, CI/CD, IaC) : équipe 3
-- Monitoring (CloudWatch, Azure Monitor) : équipe 2 + 3
-- Tests et documentation : équipe 1 + 3
+
+- **Backend** (API, entités, services) : Équipe 1
+- **Sécurité** (Azure AD, contrôle d'accès) : Équipe 2
+- **DevOps** (Docker, Kubernetes, CI/CD, CloudFormation) : Équipe 3
+- **Monitoring** (CloudWatch, Azure Monitor) : Équipes 2 et 3
+- **Tests et documentation** : Équipes 1 et 3
 
 ### Difficultés rencontrées
-- Configuration Azure AD/OAuth2 avec Spring Security
-- Mécanisme offline-first avec synchronisation Redis + file locale
-- Adaptation au contexte camerounais (latence, souveraineté, coupures)
+
+- Configuration d'Azure AD avec Spring Security OAuth2
+- Mise en place du mécanisme offline-first avec synchronisation automatique
+- Adaptation de l'infrastructure au contexte camerounais (latence, souveraineté des données, coupures électriques)
 
 ---
 
