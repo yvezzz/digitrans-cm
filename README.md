@@ -9,99 +9,104 @@ Projet porté par **CAMTECH SOLUTIONS S.A.** (Douala, Cameroun) dans le cadre de
 ## 1. Schéma d'architecture
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                     DIGITRANS-CM Architecture                     │
-│                       Cloud hybride AWS + Azure                   │
-├──────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  ┌──────────┐  ┌──────────┐  ┌────────────┐  ┌──────────┐      │
-│  │   ERP    │  │   CRM    │  │ Supply     │  │   BI     │      │
-│  │  Module  │  │  Module  │  │ Chain      │  │  Module  │      │
-│  └────┬─────┘  └────┬─────┘  └────┬───────┘  └────┬─────┘      │
-│       │             │             │               │             │
-│       └─────────────┴─────────────┴───────────────┘             │
-│                         │                                        │
-│                  ┌──────┴──────┐                                 │
-│                  │  Spring     │  ┌────────────┐                │
-│                  │  Security   │  │   Redis    │                │
-│                  │  (OAuth2)   │  │  (cache)   │                │
-│                  └──────┬──────┘  └────────────┘                │
-│                         │                                        │
-│                  ┌──────┴──────┐   ┌──────────────┐             │
-│                  │ PostgreSQL  │   │ CloudWatch   │             │
-│                  │  (RDS)      │   │ (Monitoring) │             │
-│                  └──────┬──────┘   └──────────────┘             │
-│                         │                                        │
-│  ┌──────────────────────┴────────────────────────────────┐      │
-│  │           AWS Cloud (af-south-1, Cape Town)           │      │
-│  │  VPC → Subnets → ALB → Auto Scaling → RDS Multi-AZ   │      │
-│  └───────────────────────────────────────────────────────┘      │
-│                                                                   │
-│  On-premise (Cameroun) : Donnees RH + Financieres                │
-│  Cloud (af-south-1)     : APIs, BI, CRM                          │
-└──────────────────────────────────────────────────────────────────┘
+                        DIGITRANS-CM Architecture
+                          Cloud hybride AWS + Azure
+
+  ┌──────────┐  ┌──────────┐  ┌────────────┐  ┌──────────┐
+  │   ERP    │  │   CRM    │  │ Supply     │  │   BI     │
+  │  Module  │  │  Module  │  │ Chain      │  │  Module  │
+  └────┬─────┘  └────┬─────┘  └────┬───────┘  └────┬─────┘
+       │             │             │               │
+       └─────────────┴─────────────┴───────────────┘
+                         │
+                  ┌──────┴──────┐
+                  │  Azure AD   │── Authentification OAuth2
+                  │  + JWT      │
+                  └──────┬──────┘
+                         │
+                  ┌──────┴──────┐   ┌──────────────┐
+                  │   MySQL     │   │   Redis      │
+                  │  (RDS)      │   │ (Cache +     │
+                  │             │   │  Offline sync)│
+                  └──────┬──────┘   └──────────────┘
+                         │
+  ┌──────────────Azure──────────────────────────────┐
+  │  Azure AD (Identités) + Azure Monitor (Logs)    │
+  └─────────────────────────────────────────────────┘
+
+  ┌──────────────AWS (af-south-1)───────────────────┐
+  │  VPC → Subnets → ALB → Auto Scaling → RDS      │
+  │  CloudWatch (Métriques) + EKS (Kubernetes)      │
+  └─────────────────────────────────────────────────┘
+
+  On-premise (Cameroun) : Données RH + Financières (loi 2010/012)
+  Cloud (af-south-1)    : APIs applicatives, BI, CRM, Cache
+  Azure                 : Azure AD, Azure Monitor
 ```
 
 ---
 
 ## 2. Choix technologiques
 
-### 2.1. Regions cloud africaines
+### 2.1. Régions cloud africaines
 
-Conformement a la section 1.2.1 du sujet, nous avons choisi :
-- **AWS af-south-1 (Cape Town)** : latence ~150-200ms depuis Douala, conforme a la souverainete des donnees (reste en Afrique)
-- Alternative Azure South Africa North non retenue car AWS offre un meilleur rapport qualite-prix pour les services PaaS (RDS, ElastiCache)
+Conformément à la section 1.2.1 du sujet :
+- **AWS af-south-1 (Cape Town)** : latence ~150-200ms depuis Douala
+- **Azure South Africa North** : authentification centralisée (Azure AD) + supervision (Azure Monitor)
 
-### 2.2. Stockage on-premise vs cloud
+### 2.2. Répartition on-premise vs cloud
 
-| Donnees | Localisation | Justification |
+| Données | Localisation | Justification |
 |---------|-------------|---------------|
-| RH, financieres, clients | On-premise (Cameroun) | Loi 2010/012, souverainete |
-| APIs, BI, CRM, Cache | Cloud af-south-1 | Haute disponibilite, scalabilite |
+| RH, financières, clients | On-premise (Cameroun) | Loi 2010/012, souveraineté |
+| APIs, BI, CRM, Cache | Cloud af-south-1 | Haute disponibilité, scalabilité |
+| Identités, Supervision | Azure (Global) | Azure AD + Azure Monitor |
 
-### 2.3. Architecture resiliente
+### 2.3. Architecture résiliente
 
-- Multi-AZ RDS en production (basculement automatique)
-- Auto Scaling group (min 2, max 6 instances)
-- ALB (Application Load Balancer) pour repartition de charge
-- Cache Redis pour fonctionnement degrade hors-ligne
-- Snapshots quotidiens + retention 30 jours en prod
+- Multi-AZ RDS MySQL en production (basculement automatique)
+- Auto Scaling group (min 2, max 6 instances EC2)
+- ALB (Application Load Balancer) pour répartition de charge
+- **Kubernetes (EKS)** pour l'orchestration des conteneurs
+- Cache Redis + file d'attente locale pour mode offline-first
+- Snapshots quotidiens RDS + rétention 30 jours en prod
 
 ### 2.4. Stack technique
 
 | Composant | Technologie | Justification |
 |-----------|-------------|---------------|
-| Backend | Java 17, Spring Boot 3.2.5 | Maturite, ecosysteme cloud |
-| Base de donnees | PostgreSQL 16 (AWS RDS) | Fiable, gratuit, recommande dans le sujet (via Azure SQL ou RDS) |
-| Authentification | OAuth 2.0 / JWT | Exige section 1.2.3 |
-| Documentation API | Springdoc OpenAPI (Swagger) | Exige section 1.2.3 |
-| Cache offline-first | Redis 7 | Exige section 1.2.4 |
-| Supervision | AWS CloudWatch | Exige section 1.4.3 |
-| Conteneurisation | Docker | Exige section 1.3.4 |
-| CI/CD | GitHub Actions | Exige section 1.3.3 |
-| IaC | AWS CloudFormation | Exige section 1.3.1 |
+| Backend | Java 17, Spring Boot 3.2.5 | Maturité, écosystème cloud |
+| Base de données | **MySQL 8.0** (AWS RDS) | Conforme au sujet (RDS), fiable |
+| Authentification | **Azure AD** (OAuth2 / JWT) | Exigé section 1.2.3 |
+| API Documentation | Springdoc OpenAPI (Swagger) | Exigé section 1.2.3 |
+| Cache offline-first | Redis 7 + sync queue locale | Exigé section 1.2.4 |
+| Supervision | **AWS CloudWatch** + **Azure Monitor** | Exigés section 1.4.3 |
+| Conteneurisation | Docker | Exigé section 1.3.4 |
+| Orchestration | **Kubernetes (EKS)** | Exigé section 1.3.4 |
+| CI/CD | GitHub Actions | Exigé section 1.3.3 |
+| IaC | AWS CloudFormation | Exigé section 1.3.1 |
 
 ---
 
 ## 3. Modules fonctionnels
 
-| Module | Entites | Description |
+| Module | Entités | Description |
 |--------|---------|-------------|
-| **ERP** | Employee, Supplier, Invoice | RH, fournisseurs, comptabilite |
+| **ERP** | Employee, Supplier, Invoice | RH, fournisseurs, comptabilité |
 | **CRM** | Client, Restaurant | Relation client, restaurants SavoirManger |
-| **Supply Chain** | Product, Shipment | Traçabilite plantations → transformation → vente |
-| **BI** | Dashboard (stats) | Indicateurs cles (employes, clients, expeditions) |
+| **Supply Chain** | Product, Shipment | Traçabilité plantations → transformation → vente |
+| **BI** | Dashboard (stats) | Indicateurs clés (employés, clients, expéditions) |
 
 ---
 
 ## 4. API REST
 
-Documentation Swagger complete : [http://localhost:8081/api/v1/swagger-ui.html](http://localhost:8081/api/v1/swagger-ui.html)
+Documentation Swagger : [http://localhost:8081/api/v1/swagger-ui.html](http://localhost:8081/api/v1/swagger-ui.html)
 
 ### Endpoints
 
-| Methode | Path | Module | Auth |
-|---------|------|--------|------|
+| Méthode | Path | Module | Rôle requis |
+|---------|------|--------|-------------|
 | GET | `/api/v1/erp/employees` | ERP | ADMIN |
 | POST | `/api/v1/erp/employees` | ERP | ADMIN |
 | GET | `/api/v1/erp/suppliers` | ERP | ADMIN |
@@ -114,51 +119,61 @@ Documentation Swagger complete : [http://localhost:8081/api/v1/swagger-ui.html](
 
 ---
 
-## 5. Deploiement
+## 5. Déploiement
 
 ### 5.1. Local (dev)
 
 ```bash
-# Pre-requis : Java 17+, Docker
-docker-compose up -d          # PostgreSQL + Redis
+docker-compose up -d          # MySQL + Redis
 mvn spring-boot:run            # Port 8081
 ```
 
-### 5.2. Profils disponibles
+### 5.2. Kubernetes
 
-| Profil | Usage | DB | CloudWatch |
-|--------|-------|----|------------|
-| dev | Developpement local | localhost:5432 | desactive |
-| test | Tests automatises | digitrans_test | desactive |
-| prod | Production | AWS RDS | active |
+```bash
+kubectl apply -f k8s/
+```
 
-### 5.3. Pipeline CI/CD (GitHub Actions)
+Déploie : Deployment (2 replicas), Service (ClusterIP), Ingress, HPA (auto-scaling CPU 70%).
+
+### 5.3. Profils disponibles
+
+| Profil | Usage | DB | CloudWatch | Azure Monitor |
+|--------|-------|----|------------|---------------|
+| dev | Développement local | localhost:3306 | désactivé | désactivé |
+| test | Tests automatisés | digitrans_test | désactivé | désactivé |
+| prod | Production | AWS RDS | activé | activé |
+
+### 5.4. Pipeline CI/CD (GitHub Actions)
 
 ```yaml
 # .github/workflows/ci.yml
-# Jobs : build-and-test + docker (push sur main)
+# Jobs : build-and-test (MySQL) + docker push sur main
 ```
 
 ---
 
 ## 6. Variables d'environnement
 
-| Variable | Defaut | Description |
+| Variable | Défaut | Description |
 |----------|--------|-------------|
-| `DB_HOST` | localhost | Hote PostgreSQL |
-| `DB_PORT` | 5432 | Port PostgreSQL |
+| `DB_HOST` | localhost | Hôte MySQL |
+| `DB_PORT` | 3306 | Port MySQL |
 | `DB_NAME` | digitrans_db | Nom de la base |
-| `DB_USERNAME` | postgres | Utilisateur DB |
-| `DB_PASSWORD` | admin | Mot de passe DB |
-| `REDIS_HOST` | localhost | Hote Redis |
+| `DB_USERNAME` | root | Utilisateur DB |
+| `DB_PASSWORD` | root | Mot de passe DB |
+| `REDIS_HOST` | localhost | Hôte Redis |
 | `REDIS_PORT` | 6379 | Port Redis |
 | `SPRING_PROFILES_ACTIVE` | dev | Profil actif |
+| `AZURE_AD_ISSUER_URI` | — | Issuer URI Azure AD |
+| `AZURE_AD_CLIENT_ID` | — | Client ID Azure AD |
+| `AZURE_AD_CLIENT_SECRET` | — | Client Secret Azure AD |
 
 ---
 
-## 7. Reprise apres sinistre (RTO / RPO)
+## 7. Reprise après sinistre (RTO / RPO)
 
-| Environnement | RPO | RTO | Strategie |
+| Environnement | RPO | RTO | Stratégie |
 |--------------|-----|-----|-----------|
 | Dev / Test | 24h | 4h | Sauvegarde quotidienne + restauration manuelle |
 | Production | 1h | 30min | Multi-AZ RDS + Auto Scaling + snapshots automatiques |
@@ -169,30 +184,29 @@ mvn spring-boot:run            # Port 8081
 
 ### 8.1. Tests unitaires
 - JUnit 5 + Spring Boot Test
-- Contexte Spring charge via `@SpringBootTest`
+- Contexte Spring chargé via `@SpringBootTest`
 
 ### 8.2. Tests de charge (K6)
 ```bash
 k6 run loadtests/k6-load-test.js
 ```
-Scenarios : montee progressive 20 → 100 utilisateurs simultanes.
+Scénarios : montée progressive 20 → 100 utilisateurs simultanés.
 KPIs : P95 < 2000ms, taux d'erreur < 10%.
 
 ---
 
-## 9. Infrastructure as Code (CloudFormation)
+## 9. Infrastructure as Code
 
+### AWS CloudFormation
 Fichier : `infra/cloudformation-template.yaml`
 
-Ressources creees :
-- VPC (CIDR 10.0.0.0/16)
-- 2 sous-reseaux publics + 1 prive
+Ressources créées :
+- VPC (CIDR 10.0.0.0/16) avec 2 sous-réseaux publics + 1 privé
 - ALB + Target Group + Listener
 - Auto Scaling Group (min 1, max 6)
-- RDS PostgreSQL (Multi-AZ en prod)
-- Groupes de securite (moindre privilege)
+- RDS MySQL 8.0 (Multi-AZ en prod)
+- Groupes de sécurité (moindre privilège)
 
-Deploiement :
 ```bash
 aws cloudformation deploy \
   --template-file infra/cloudformation-template.yaml \
@@ -200,24 +214,34 @@ aws cloudformation deploy \
   --region af-south-1
 ```
 
+### Kubernetes Manifests
+Dossier : `k8s/`
+- `configmap.yaml` : configuration applicative
+- `secrets.yaml` : credentials (DB, Azure AD)
+- `deployment.yaml` : 2 réplicas, probes, ressources
+- `service.yaml` : ClusterIP
+- `ingress.yaml` : exposition externe
+- `hpa.yaml` : auto-scaling (CPU 70%, mémoire 80%)
+
 ---
 
-## 10. Rapport d'activite (collectif)
+## 10. Rapport d'activité (collectif)
 
-### Repartition des taches
-- Backend (API, entites, services) : equipe 1
-- Securite (JWT, RBAC) : equipe 2
-- DevOps (Docker, CI/CD, IaC) : equipe 3
-- Tests et documentation : equipe 1 + 3
+### Répartition des tâches
+- Backend (API, entités, services) : équipe 1
+- Sécurité (Azure AD, RBAC) : équipe 2
+- DevOps (Docker, K8s, CI/CD, IaC) : équipe 3
+- Monitoring (CloudWatch, Azure Monitor) : équipe 2 + 3
+- Tests et documentation : équipe 1 + 3
 
-### Difficultes rencontrees
-- Configuration OAuth2/JWT avec ressource server Spring Security
-- Gestion du cache Redis pour le mode offline-first
-- Adaptation au contexte camerounais (latence, souverainete)
+### Difficultés rencontrées
+- Configuration Azure AD/OAuth2 avec Spring Security
+- Mécanisme offline-first avec synchronisation Redis + file locale
+- Adaptation au contexte camerounais (latence, souveraineté, coupures)
 
 ---
 
 ## Auteurs
 
-**CAMTECH SOLUTIONS S.A.** — Douala, Cameroun  
+**CAMTECH SOLUTIONS S.A.** — Douala, Cameroun
 Projet DIGITRANS-CM — 2026

@@ -1,6 +1,6 @@
 spring:
   datasource:
-    url: jdbc:postgresql://${DB_HOST}:${DB_PORT}/${DB_NAME}
+    url: jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?useSSL=true&serverTimezone=Africa/Douala
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
     hikari:
@@ -17,8 +17,12 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: ${COGNITO_ISSUER_URI}
-          jwk-set-uri: ${COGNITO_JWK_URI}
+          issuer-uri: ${AZURE_AD_ISSUER_URI}
+      client:
+        registration:
+          azure:
+            client-id: ${AZURE_AD_CLIENT_ID}
+            client-secret: ${AZURE_AD_CLIENT_SECRET}
 
 logging:
   level:
@@ -39,6 +43,8 @@ management:
         namespace: DigitransCM-Prod
         enabled: true
         batch-size: 20
+      azuremonitor:
+        enabled: true
     tags:
       environment: prod
       project: digitrans-cm

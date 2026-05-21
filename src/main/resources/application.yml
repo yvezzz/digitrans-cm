@@ -10,7 +10,7 @@ spring:
     active: ${SPRING_PROFILES_ACTIVE:dev}
 
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:digitrans_db}
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:digitrans_db}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Africa/Douala
     username: ${DB_USERNAME:user}
     password: ${DB_PASSWORD:password}
     hikari:
@@ -25,11 +25,8 @@ spring:
     show-sql: false
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect
+        dialect: org.hibernate.dialect.MySQLDialect
         format_sql: true
-        jdbc:
-          lob:
-            non_contextual_creation: true
 
   jackson:
     serialization:
@@ -41,7 +38,19 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: ${JWT_ISSUER_URI:http://localhost:8081/api/v1}
+          issuer-uri: ${AZURE_AD_ISSUER_URI:https://login.microsoftonline.com/your-tenant-id/v2.0}
+      client:
+        registration:
+          azure:
+            client-id: ${AZURE_AD_CLIENT_ID:your-client-id}
+            client-secret: ${AZURE_AD_CLIENT_SECRET:your-client-secret}
+            scope: openid, profile, email
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/azure"
+        provider:
+          azure:
+            issuer-uri: https://login.microsoftonline.com/your-tenant-id/v2.0
+            user-name-attribute: sub
 
 # Swagger
 springdoc:

@@ -11,16 +11,15 @@ jobs:
     runs-on: ubuntu-latest
 
     services:
-      postgres:
-        image: postgres:16-alpine
+      mysql:
+        image: mysql:8.0
         env:
-          POSTGRES_DB: digitrans_db
-          POSTGRES_USER: user
-          POSTGRES_PASSWORD: password
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: digitrans_db
         ports:
-          - 5432:5432
+          - 3306:3306
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "mysqladmin ping -h localhost -uroot -proot"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -37,10 +36,10 @@ jobs:
         run: mvn clean package -B
         env:
           DB_HOST: localhost
-          DB_PORT: 5432
+          DB_PORT: 3306
           DB_NAME: digitrans_db
-          DB_USERNAME: user
-          DB_PASSWORD: password
+          DB_USERNAME: root
+          DB_PASSWORD: root
 
   docker:
     needs: build-and-test

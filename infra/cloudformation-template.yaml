@@ -13,9 +13,9 @@ Parameters:
     Default: 10.0.0.0/16
     Description: CIDR block for VPC
 
-  DBInstanceClass:
+      DBInstanceClass:
     Type: String
-    Default: db.t3.medium
+    Default: db.t3.micro
     AllowedValues: [db.t3.micro, db.t3.small, db.t3.medium]
     Description: RDS instance class
 
@@ -24,6 +24,12 @@ Parameters:
     Default: 20
     MinValue: 20
     MaxValue: 100
+
+  DBEngine:
+    Type: String
+    Default: mysql
+    AllowedValues: [mysql]
+    Description: Database engine
 
   InstanceType:
     Type: String
@@ -145,7 +151,7 @@ Resources:
   ALBTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Port: 8080
+      Port: 8081
       Protocol: HTTP
       TargetType: instance
       VpcId: !Ref VPC
@@ -171,8 +177,8 @@ Resources:
       VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: tcp
-          FromPort: 8080
-          ToPort: 8080
+          FromPort: 8081
+          ToPort: 8081
           SourceSecurityGroupId: !Ref ALBSecurityGroup
 
   # Auto Scaling
@@ -190,11 +196,11 @@ Resources:
             yum update -y
             yum install -y docker
             service docker start
-            docker pull ghcr.io/camtech/digitrans-cm:latest
-            docker run -d -p 8080:8080 \
+            docker pull yvezzz/digitrans-cm:latest
+            docker run -d -p 8081:8081 \
               -e SPRING_PROFILES_ACTIVE=${EnvironmentName} \
               -e DB_HOST=${RDSInstance.Endpoint.Address} \
-              ghcr.io/camtech/digitrans-cm:latest
+              yvezzz/digitrans-cm:latest
 
   AutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
@@ -225,16 +231,16 @@ Resources:
           PredefinedMetricType: ASGAverageCPUUtilization
         TargetValue: 70
 
-  # RDS PostgreSQL
+  # RDS MySQL
   DBSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Security group for RDS PostgreSQL
+      GroupDescription: Security group for RDS MySQL
       VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: tcp
-          FromPort: 5432
-          ToPort: 5432
+          FromPort: 3306
+          ToPort: 3306
           SourceSecurityGroupId: !Ref AppSecurityGroup
 
   DBSubnetGroup:
@@ -248,8 +254,8 @@ Resources:
     Type: AWS::RDS::DBInstance
     Properties:
       DBInstanceIdentifier: !Sub 'digitrans-db-${EnvironmentName}'
-      Engine: postgres
-      EngineVersion: '16.3'
+      Engine: mysql
+      EngineVersion: '8.0'
       DBInstanceClass: !Ref DBInstanceClass
       AllocatedStorage: !Ref DBAllocatedStorage
       DBName: digitrans_db

@@ -10,5 +10,5 @@ WORKDIR /app
 RUN addgroup -S digitrans && adduser -S digitrans -G digitrans
 COPY --from=builder /build/target/*.jar app.jar
 USER digitrans
-EXPOSE 8080
+EXPOSE 8081
 ENTRYPOINT ["java", "-jar", "app.jar"]

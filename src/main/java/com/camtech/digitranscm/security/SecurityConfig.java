@@ -7,12 +7,7 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.oauth2.jwt.JwtDecoder;
-import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
-
-import javax.crypto.spec.SecretKeySpec;
-import java.nio.charset.StandardCharsets;
 
 @Configuration
 @EnableWebSecurity
@@ -40,17 +35,12 @@ public class SecurityConfig {
                 .anyRequest().authenticated()
             )
             .oauth2ResourceServer(oauth2 -> oauth2
-                .jwt(jwt -> jwt.decoder(jwtDecoder()))
+                .jwt(jwt -> {})
+            )
+            .oauth2Login(oauth2 -> oauth2
+                .defaultSuccessUrl("/swagger-ui.html", true)
             );
 
         return http.build();
-    }
-
-    @Bean
-    public JwtDecoder jwtDecoder() {
-        String secret = "digitrans-cm-dev-secret-key-2026-camtech-solutions";
-        return NimbusJwtDecoder.withSecretKey(
-            new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256")
-        ).build();
     }
 }
