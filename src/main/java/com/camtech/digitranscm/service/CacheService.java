@@ -3,6 +3,7 @@ package com.camtech.digitranscm.service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
@@ -104,9 +105,9 @@ public class CacheService {
         return localCache.containsKey(key);
     }
 
+    @Scheduled(fixedDelay = 5000)
     public void syncPending() {
         if (!isOnline()) {
-            log.info("Still offline, cannot sync");
             return;
         }
         int count = 0;

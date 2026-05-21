@@ -6,9 +6,9 @@ metadata:
     app: digitrans-cm
 data:
   SPRING_PROFILES_ACTIVE: "prod"
-  DB_HOST: "digitrans-mysql"
+  DB_HOST: "digitrans-db.cluster-your-rds-endpoint.af-south-1.rds.amazonaws.com"
   DB_PORT: "3306"
   DB_NAME: "digitrans_db"
-  REDIS_HOST: "digitrans-redis"
+  REDIS_HOST: "digitrans-cache.your-elasticache-endpoint.af-south-1.cache.amazonaws.com"
   REDIS_PORT: "6379"
   AZURE_AD_ISSUER_URI: "https://login.microsoftonline.com/your-tenant-id/v2.0"

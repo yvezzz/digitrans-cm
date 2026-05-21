@@ -13,7 +13,11 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: http://localhost:8081/api/v1
+          issuer-uri: ${AZURE_AD_ISSUER_URI:http://localhost:8081/api/v1}
+
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.security.oauth2.client.OAuth2ClientAutoConfiguration
 
 logging:
   level:

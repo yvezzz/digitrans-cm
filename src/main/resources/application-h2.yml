@@ -21,6 +21,7 @@ spring:
     exclude:
       - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
       - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+      - org.springframework.boot.autoconfigure.security.oauth2.client.OAuth2ClientAutoConfiguration
 
 logging:
   level:

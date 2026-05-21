@@ -23,6 +23,13 @@ spring:
           azure:
             client-id: ${AZURE_AD_CLIENT_ID}
             client-secret: ${AZURE_AD_CLIENT_SECRET}
+            scope: openid, profile, email
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/azure"
+        provider:
+          azure:
+            issuer-uri: ${AZURE_AD_ISSUER_URI}
+            user-name-attribute: sub
 
 logging:
   level:

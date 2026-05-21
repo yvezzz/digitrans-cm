@@ -32,7 +32,7 @@ public class OpenApiConfig {
                 .license(new License()
                     .name("Propriétaire - CAMTECH SOLUTIONS")))
             .servers(List.of(
-                new Server().url("http://localhost:8080/api/v1").description("Local dev"),
+                new Server().url("http://localhost:8081/api/v1").description("Local dev"),
                 new Server().url("https://api.digitrans.camtech.cm/api/v1").description("Production")
             ));
     }

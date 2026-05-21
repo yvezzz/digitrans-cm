@@ -2,7 +2,7 @@ import http from 'k6/http';
 import { check, sleep, group } from 'k6';
 import { Rate, Trend } from 'k6/metrics';
 
-const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080/api/v1';
+const BASE_URL = __ENV.BASE_URL || 'http://localhost:8081/api/v1';
 
 const errorRate = new Rate('errors');
 const responseTime = new Trend('response_time');
@@ -22,7 +22,7 @@ export const options = {
 };
 
 function getToken() {
-  // TODO: remplacer par un vrai token Cognito
+  // TODO: remplacer par un vrai token Azure AD
   return 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.placeholder';
 }
 

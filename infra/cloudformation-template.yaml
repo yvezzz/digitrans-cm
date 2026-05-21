@@ -13,7 +13,7 @@ Parameters:
     Default: 10.0.0.0/16
     Description: CIDR block for VPC
 
-      DBInstanceClass:
+  DBInstanceClass:
     Type: String
     Default: db.t3.micro
     AllowedValues: [db.t3.micro, db.t3.small, db.t3.medium]
@@ -24,12 +24,6 @@ Parameters:
     Default: 20
     MinValue: 20
     MaxValue: 100
-
-  DBEngine:
-    Type: String
-    Default: mysql
-    AllowedValues: [mysql]
-    Description: Database engine
 
   InstanceType:
     Type: String
@@ -46,7 +40,6 @@ Conditions:
   IsProd: !Equals [!Ref EnvironmentName, 'prod']
 
 Resources:
-  # VPC
   VPC:
     Type: AWS::EC2::VPC
     Properties:
@@ -57,7 +50,6 @@ Resources:
         - Key: Name
           Value: !Sub '${EnvironmentName}-digitrans-vpc'
 
-  # Subnets
   PublicSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
@@ -90,6 +82,17 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub '${EnvironmentName}-digitrans-private-1'
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [3, !Cidr [!Ref VpcCIDR, 4, 8]]
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName}-digitrans-private-2'
 
   InternetGateway:
     Type: AWS::EC2::InternetGateway
@@ -125,7 +128,6 @@ Resources:
       SubnetId: !Ref PublicSubnet2
       RouteTableId: !Ref PublicRouteTable
 
-  # ALB
   ALBSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -135,6 +137,10 @@ Resources:
         - IpProtocol: tcp
           FromPort: 80
           ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
           CidrIp: 0.0.0.0/0
 
   ALB:
@@ -169,7 +175,6 @@ Resources:
       Port: 80
       Protocol: HTTP
 
-  # App Security Group
   AppSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -181,7 +186,6 @@ Resources:
           ToPort: 8081
           SourceSecurityGroupId: !Ref ALBSecurityGroup
 
-  # Auto Scaling
   LaunchTemplate:
     Type: AWS::EC2::LaunchTemplate
     Properties:
@@ -200,6 +204,10 @@ Resources:
             docker run -d -p 8081:8081 \
               -e SPRING_PROFILES_ACTIVE=${EnvironmentName} \
               -e DB_HOST=${RDSInstance.Endpoint.Address} \
+              -e DB_PORT=3306 \
+              -e DB_NAME=digitrans_db \
+              -e REDIS_HOST=${RedisCluster.RedisEndpoint.Address} \
+              -e REDIS_PORT=6379 \
               yvezzz/digitrans-cm:latest
 
   AutoScalingGroup:
@@ -231,7 +239,6 @@ Resources:
           PredefinedMetricType: ASGAverageCPUUtilization
         TargetValue: 70
 
-  # RDS MySQL
   DBSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -246,9 +253,10 @@ Resources:
   DBSubnetGroup:
     Type: AWS::RDS::DBSubnetGroup
     Properties:
-      DBSubnetGroupDescription: Subnet group for RDS
+      DBSubnetGroupDescription: Subnet group for RDS Multi-AZ
       SubnetIds:
         - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
 
   RDSInstance:
     Type: AWS::RDS::DBInstance
@@ -275,6 +283,45 @@ Resources:
         - Key: Project
           Value: digitrans-cm
 
+  RedisSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Redis ElastiCache
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          SourceSecurityGroupId: !Ref AppSecurityGroup
+
+  RedisSubnetGroup:
+    Type: AWS::ElastiCache::SubnetGroup
+    Properties:
+      Description: Subnet group for Redis
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+
+  RedisCluster:
+    Type: AWS::ElastiCache::CacheCluster
+    Properties:
+      ClusterName: !Sub 'digitrans-cache-${EnvironmentName}'
+      Engine: redis
+      EngineVersion: '7.1'
+      CacheNodeType: cache.t3.micro
+      NumCacheNodes: 1
+      AZMode: !If [IsProd, 'cross-az', 'single-az']
+      PreferredAvailabilityZone: !If [IsProd, !Select [0, !GetAZs ''], !Ref 'AWS::NoValue']
+      PreferredAvailabilityZones: !If [IsProd, !GetAZs '', !Ref 'AWS::NoValue']
+      CacheSubnetGroupName: !Ref RedisSubnetGroup
+      VpcSecurityGroupIds:
+        - !Ref RedisSecurityGroup
+      Tags:
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Project
+          Value: digitrans-cm
+
 Outputs:
   VpcId:
     Value: !Ref VPC
@@ -282,3 +329,7 @@ Outputs:
     Value: !GetAtt ALB.DNSName
   RDSAddress:
     Value: !GetAtt RDSInstance.Endpoint.Address
+  RedisAddress:
+    Value: !GetAtt RedisCluster.RedisEndpoint.Address
+  RedisPort:
+    Value: !GetAtt RedisCluster.RedisEndpoint.Port

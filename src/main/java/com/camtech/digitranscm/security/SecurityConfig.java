@@ -36,9 +36,6 @@ public class SecurityConfig {
             )
             .oauth2ResourceServer(oauth2 -> oauth2
                 .jwt(jwt -> {})
-            )
-            .oauth2Login(oauth2 -> oauth2
-                .defaultSuccessUrl("/swagger-ui.html", true)
             );
 
         return http.build();
