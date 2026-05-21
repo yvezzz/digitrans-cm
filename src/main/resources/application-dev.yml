@@ -1,0 +1,30 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/digitrans_db
+    username: postgres
+    password: admin
+
+  jpa:
+    show-sql: true
+    hibernate:
+      ddl-auto: update
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8081/api/v1
+
+logging:
+  level:
+    com.camtech: DEBUG
+    org.hibernate.SQL: DEBUG
+
+management:
+  health:
+    redis:
+      enabled: false
+  metrics:
+    export:
+      cloudwatch:
+        enabled: false
