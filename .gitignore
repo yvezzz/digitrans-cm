@@ -20,3 +20,6 @@ Thumbs.db
 application-dev.yml
 application-prod.yml
 *.original
+app.log
+app.err
+*.log
