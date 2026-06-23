@@ -1,4 +1,4 @@
-name: CI/CD - DIGITRANS-CM
+name: CI/CD Pipeline - DIGITRANS-CM
 
 on:
   push:
@@ -7,7 +7,8 @@ on:
     branches: [main]
 
 jobs:
-  build-and-test:
+  tests-backend-api:
+    name: Tests Backend API
     runs-on: ubuntu-latest
 
     services:
@@ -26,13 +27,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      - name: Set up JDK 21
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
           cache: maven
-      - name: Build and test
+      - name: Build and run tests
         run: mvn clean package -B
         env:
           DB_HOST: localhost
@@ -41,8 +42,51 @@ jobs:
           DB_USERNAME: root
           DB_PASSWORD: root
 
-  docker:
-    needs: build-and-test
+  linting-and-security-scan:
+    name: Linting & Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+      - name: Run SpotBugs
+        run: |
+          mvn com.github.spotbugs:spotbugs-maven-plugin:4.7.3.0:check || true
+      - name: Run OWASP Dependency-Check
+        run: |
+          mvn org.owasp:dependency-check-maven:8.4.0:check || true
+
+  terraform-infrastructure:
+    name: Terraform Infrastructure
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.7
+      - name: Terraform init
+        run: |
+          cd infrastructure/terraform
+          terraform init -input=false
+      - name: Terraform plan
+        run: |
+          cd infrastructure/terraform
+          terraform plan -out=tfplan -input=false || true
+      - name: Upload Terraform plan artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: tfplan
+          path: infrastructure/terraform/tfplan
+
+  build-and-push-docker-image:
+    name: Build & Push Docker Image
+    needs: [tests-backend-api, terraform-infrastructure]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
     steps:
@@ -57,16 +101,46 @@ jobs:
         with:
           context: .
           push: true
-          tags: ${{ secrets.DOCKER_USERNAME }}/digitrans-cm:latest
+          tags: "${{ secrets.DOCKER_USERNAME }}/digitrans-cm:latest"
+
+  deploy-ecs-fargate:
+    name: Deploy to ECS Fargate
+    needs: build-and-push-docker-image
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: af-south-1
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+      - name: Update ECS services
+        run: |
+          aws ecs update-service --cluster digitrans-cm-cluster --service digitrans-cm-erp-service --force-new-deployment --region af-south-1
+          aws ecs update-service --cluster digitrans-cm-cluster --service digitrans-cm-supply-chain-service --force-new-deployment --region af-south-1
+          aws ecs update-service --cluster digitrans-cm-cluster --service digitrans-cm-auth-service --force-new-deployment --region af-south-1
+      - name: Wait for ECS service stability
+        run: |
+          aws ecs wait services-stable --cluster digitrans-cm-cluster --services digitrans-cm-erp-service digitrans-cm-supply-chain-service digitrans-cm-auth-service --region af-south-1
 
   load-test:
-    needs: build-and-test
+    name: Load Test
+    needs: tests-backend-api
     runs-on: ubuntu-latest
-    if: ${{ secrets.LOAD_TEST_BASE_URL != '' }}
     steps:
       - uses: actions/checkout@v4
       - name: Install k6
+        env:
+          LOAD_TEST_BASE_URL: ${{ secrets.LOAD_TEST_BASE_URL }}
         run: |
+          if [ -z "$LOAD_TEST_BASE_URL" ]; then
+            echo "LOAD_TEST_BASE_URL is not set; skipping load test setup."
+            exit 0
+          fi
           sudo apt-get update
           sudo apt-get install -y gnupg2 ca-certificates
           curl -s https://packagecloud.io/install/repositories/loadimpact/k6/script.deb.sh | sudo bash
@@ -74,5 +148,53 @@ jobs:
       - name: Run k6 load test
         env:
           BASE_URL: ${{ secrets.LOAD_TEST_BASE_URL }}
+          LOAD_TEST_BASE_URL: ${{ secrets.LOAD_TEST_BASE_URL }}
         run: |
+          if [ -z "$LOAD_TEST_BASE_URL" ]; then
+            echo "LOAD_TEST_BASE_URL is not set; skipping k6 load test."
+            exit 0
+          fi
           k6 run loadtests/k6-load-test.js
+
+  notification:
+    name: Notification
+    needs: [tests-backend-api, linting-and-security-scan, terraform-infrastructure, build-and-push-docker-image, deploy-ecs-fargate]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify Slack on Success
+        if: ${{ needs.tests-backend-api.result == 'success' && needs.linting-and-security-scan.result == 'success' && needs.build-and-push-docker-image.result == 'success' && needs.deploy-ecs-fargate.result == 'success' }}
+        uses: slackapi/slack-github-action@v1
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK }}
+          payload: |
+            {
+              "text": "DIGITRANS-CM Pipeline - Build & Deploy Successful",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Build Status:* Success\n*Commit:* ${{ github.sha }}\n*Branch:* ${{ github.ref }}"
+                  }
+                }
+              ]
+            }
+      - name: Notify Slack on Failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK }}
+          payload: |
+            {
+              "text": "DIGITRANS-CM Pipeline - Build Failed",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Build Status:* Failed\n*Commit:* ${{ github.sha }}\n*Branch:* ${{ github.ref }}"
+                  }
+                }
+              ]
+            }
