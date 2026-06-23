@@ -1,0 +1,9 @@
+aws_region     = "af-south-1"
+project_name   = "digitrans-cm"
+environment    = "prod"
+db_name        = "digitrans_db"
+db_username    = "digitrans_admin"
+db_password    = "ChangeMe!SecurePassword123"  # À remplacer par un mot de passe fort en production
+instance_type  = "t3.micro"
+container_cpu  = 256
+container_memory = 512

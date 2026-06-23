@@ -58,3 +58,21 @@ jobs:
           context: .
           push: true
           tags: ${{ secrets.DOCKER_USERNAME }}/digitrans-cm:latest
+
+  load-test:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    if: ${{ secrets.LOAD_TEST_BASE_URL != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install k6
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gnupg2 ca-certificates
+          curl -s https://packagecloud.io/install/repositories/loadimpact/k6/script.deb.sh | sudo bash
+          sudo apt-get install -y k6
+      - name: Run k6 load test
+        env:
+          BASE_URL: ${{ secrets.LOAD_TEST_BASE_URL }}
+        run: |
+          k6 run loadtests/k6-load-test.js

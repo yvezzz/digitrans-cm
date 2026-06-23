@@ -1,53 +1,112 @@
+version: '3.8'
+
 services:
   mysql:
     image: mysql:8.0
-    container_name: digitrans-db
-    restart: unless-stopped
+    container_name: digitrans-mysql
     environment:
-      MYSQL_ROOT_PASSWORD: root
+      MYSQL_ROOT_PASSWORD: root_password
       MYSQL_DATABASE: digitrans_db
+      MYSQL_USER: digitrans_user
+      MYSQL_PASSWORD: digitrans_password
     ports:
       - "3306:3306"
     volumes:
-      - mysqldata:/var/lib/mysql
+      - mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+    networks:
+      - digitrans-network
 
   redis:
     image: redis:7-alpine
-    container_name: digitrans-cache
-    restart: unless-stopped
+    container_name: digitrans-redis
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - digitrans-network
 
-  app:
-    build: .
-    container_name: digitrans-app
+  auth-service:
+    build:
+      context: .
+      dockerfile: auth-service/Dockerfile
+    container_name: digitrans-auth-service
+    ports:
+      - "8082:8082"
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_NAME=digitrans_db
+      - DB_USERNAME=digitrans_user
+      - DB_PASSWORD=digitrans_password
+      - JWT_SECRET=${JWT_SECRET:-my-super-secret-key-2026-digitrans-cm-strong-token-123456}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - digitrans-network
     restart: unless-stopped
+
+  erp-service:
+    build:
+      context: .
+      dockerfile: erp-service/Dockerfile
+    container_name: digitrans-erp-service
     ports:
       - "8081:8081"
     environment:
-      SPRING_PROFILES_ACTIVE: dev
-      DB_HOST: mysql
-      DB_PORT: 3306
-      DB_NAME: digitrans_db
-      DB_USERNAME: root
-      DB_PASSWORD: root
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
+      - SPRING_PROFILES_ACTIVE=dev
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_NAME=digitrans_db
+      - DB_USERNAME=digitrans_user
+      - DB_PASSWORD=digitrans_password
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - digitrans-network
+    restart: unless-stopped
+
+  supply-chain-service:
+    build:
+      context: .
+      dockerfile: supply-chain-service/Dockerfile
+    container_name: digitrans-supply-chain-service
+    ports:
+      - "8083:8083"
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_NAME=digitrans_db
+      - DB_USERNAME=digitrans_user
+      - DB_PASSWORD=digitrans_password
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
     depends_on:
       mysql:
         condition: service_healthy
       redis:
         condition: service_healthy
+    networks:
+      - digitrans-network
+    restart: unless-stopped
+
+networks:
+  digitrans-network:
+    driver: bridge
 
 volumes:
-  mysqldata:
+  mysql_data:
+  redis_data:

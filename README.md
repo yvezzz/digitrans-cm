@@ -1,55 +1,115 @@
-# DIGITRANS-CM
+# DIGITRANS-CM - Microservices Architecture
 
 **Modernisation du Système d'Information d'AGROCAM S.A.**
 
-Projet porté par **CAMTECH SOLUTIONS S.A.** (Douala, Cameroun) dans le cadre de la transformation numérique du groupe agroalimentaire AGROCAM S.A. Budget : 480M FCFA, janvier 2026 — juin 2027.
+Projet porté par **CAMTECH SOLUTIONS S.A.** (Douala, Cameroun) — Architecture cloud native avec microservices.
 
 ---
 
-## 1. Architecture
+## Démarrage Rapide
 
-L'application DIGITRANS-CM est déployée sur une infrastructure cloud hybride combinant AWS et Microsoft Azure, avec une partie des données sensibles conservée sur site au Cameroun pour des raisons de conformité légale (loi camerounaise n°2010/012).
+```bash
+# 1. Cloner le projet
+git clone <repository-url>
+cd digitrans-cm
 
-```
-                        DIGITRANS-CM
-                          Cloud hybride
+# 2. Démarrer localement
+docker-compose up -d
 
-  ┌──────────┐  ┌──────────┐  ┌────────────┐  ┌──────────┐
-  │   ERP    │  │   CRM    │  │ Supply     │  │   BI     │
-  │  Module  │  │  Module  │  │ Chain      │  │  Module  │
-  └────┬─────┘  └────┬─────┘  └────┬───────┘  └────┬─────┘
-       │             │             │               │
-       └─────────────┴─────────────┴───────────────┘
-                         │
-                  ┌──────┴──────┐
-                  │  Azure AD   │── Authentification OAuth2/JWT
-                  └──────┬──────┘
-                         │
-                  ┌──────┴──────┐   ┌──────────────┐
-                  │   MySQL     │   │   Redis      │
-                  │  (RDS)      │   │ (Cache +     │
-                  │             │   │  Sync offline)│
-                  └──────┬──────┘   └──────────────┘
-                         │
-  ┌─── Azure ───────────────────────────────┐
-  │  Azure AD (Identités)                   │
-  │  Azure Monitor (Supervision centralisée)│
-  └─────────────────────────────────────────┘
-
-  ┌─── AWS (af-south-1, Cape Town) ────────┐
-  │  VPC → ALB → Auto Scaling → RDS MySQL  │
-  │  CloudWatch (Métriques applicatives)    │
-  │  Kubernetes (EKS)                       │
-  └─────────────────────────────────────────┘
-
-  On-premise (Cameroun) : Données RH, financières, clients
-  Cloud AWS (af-south-1) : APIs, BI, CRM, Cache
-  Azure                : Azure AD, Azure Monitor
+# 3. Vérifier le statut
+curl http://localhost:8081/api/v1/actuator/health
+# Résultat: {"status":"UP"}
 ```
 
-### Choix des régions cloud
+**Services locaux (ports par défaut)**:
+- `erp-service`: http://localhost:8081
+- `auth-service`: http://localhost:8082
+- `supply-chain-service`: http://localhost:8083
 
-Deux régions africaines sont utilisées pour garantir une latence minimale depuis Douala (~150-200 ms) et respecter les contraintes de souveraineté des données :
+**Swagger UI (par service)**: http://localhost:8081/api/v1/swagger-ui.html (ERP)
+
+**Premiers pas?** Lire [QUICK_START.md](QUICK_START.md) (5 min)
+
+---
+
+## Vue d'ensemble
+
+DIGITRANS-CM est une solution d'entreprise moderne basée sur :
+ - **Microservices Indépendants** (ERP, Supply Chain, Auth)
+ - **Cloud-Native** (AWS ECS Fargate, af-south-1)
+ - **Infrastructure as Code** (Terraform)
+ - **CI/CD Automatisé** (GitHub Actions)
+ - **Offline-First Caching** (Redis)
+ - **Haute Disponibilité** (Multi-AZ, Load Balancer)
+ - **Monitoring Centralisé** (CloudWatch)
+
+## Structure du Projet
+
+```
+digitrans-cm/
+│
+├── Documentation
+│   ├── README.md                    # Ce fichier
+│   ├── INDEX.md                     # Navigation rapide
+│   ├── QUICK_START.md               # Démarrage 5 min
+│   ├── DEPLOYMENT_GUIDE.md          # Déploiement production
+│   ├── MIGRATION_GUIDE.md           # Migrer le code
+│   ├── GITHUB_ACTIONS_SETUP.md      # Configuration CI/CD
+│   ├── PROJECT_STRUCTURE.md         # Structure détaillée
+│   ├── COMPLETE_CHECKLIST.md        # Checklist complète
+│   └── SUMMARY.md                   # Résumé des créations
+│
+├── Microservices
+│   ├── erp-service/                 # ERP Service (Port 8081)
+│   │   └── Employees, Suppliers, Invoices
+│   │
+│   ├── auth-service/                # Auth Service (Port 8082)
+│   │   └── Inscription, Connexion, JWT
+│   │
+│   └── supply-chain-service/        # Supply Chain (Port 8083)
+│       └── Products, Shipments, Offline Cache
+│
+├── Infrastructure as Code
+│   └── infrastructure/terraform/
+│       ├── README.md                # Guide Terraform détaillé
+│       ├── main.tf                  # Configuration AWS
+│       ├── variables.tf             # Variables
+│       ├── networking.tf            # VPC, Subnets, NAT
+│       ├── ecs.tf                   # ECS Cluster, ECR
+│       ├── services.tf              # Services ECS, RDS, Redis
+│       ├── outputs.tf               # Sorties (DNS, endpoints)
+│       └── terraform.tfvars.example # Template config
+│
+├── CI/CD Pipeline
+│   ├── .github/workflows/
+│   │   └── deploy.yml               # GitHub Actions pipeline
+│   └── scripts/
+│       ├── deploy-terraform.sh      # Déploie Terraform
+│       ├── push-docker-ecr.sh       # Push Docker images
+│       └── start-local.sh           # Démarre localement
+│
+├── Conteneurs
+│   ├── docker-compose.yml           # Orchestration locale
++   ├── Dockerfile                   # (copié dans chaque service)
+   └── .env.example                 # Template variables
+
+├── Build & Configuration
+│   ├── pom.xml                      # Maven parent (3 modules)
+│   ├── Makefile                     # 20+ commands rapides
+│   ├── .gitignore                   # Fichiers ignorés
+│   └── .gitattributes               # Attributs Git
+│
+├── Optional
+│   ├── loadtests/                   # Tests de charge
+│   ├── chaincode/                   # Blockchain (optionnel)
+│   ├── k8s/                         # Kubernetes manifests
+│   └── docs/                        # Documentation additionnelle
+│
+└── Générés (ne pas modifier)
+  └── target/                      # Build artifacts
+```
+
+##  Architecture
 
 | Fournisseur | Région | Services |
 |-------------|--------|----------|
